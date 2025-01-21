@@ -1,4 +1,5 @@
 {{^reactive}}
+{{^vendorExtensions.x-sse}}
 {{#examples}}
     {{#-first}}
             {{#async}}
@@ -29,6 +30,23 @@ return CompletableFuture.supplyAsync(()-> {
 {{^useResponseEntity}}throw new IllegalArgumentException("Not implemented");
 {{/useResponseEntity}}
 {{/examples}}
+{{/vendorExtensions.x-sse}}
+{{#vendorExtensions.x-sse}}
+SseEmitter emitter = new SseEmitter(0L);
+    {{#examples}}
+        ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
+        emitter.onCompletion(executor::shutdownNow);
+        executor.scheduleAtFixedRate(() -> {
+            try {
+                emitter.send("Event at " + LocalDateTime.now());
+            } catch (IOException e) {
+                executor.shutdownNow();
+                throw new RuntimeException(e);
+            }
+        }, 10, 1000, TimeUnit.MILLISECONDS);
+    {{/examples}}
+        return emitter;
+{{/vendorExtensions.x-sse}}
 {{/reactive}}
 {{#reactive}}
 {{^vendorExtensions.x-sse}}

@@ -1100,6 +1100,18 @@
             </modules>
         </profile>
         <profile>
+            <id>springboot3sse</id>
+            <activation>
+                <property>
+                    <name>env</name>
+                    <value>java</value>
+                </property>
+            </activation>
+            <modules>
+                <module>samples/openapi3/server/petstore/springboot-3-serverSentEvents</module>
+            </modules>
+        </profile>
+        <profile>
             <id>springboot-virtualan</id>
             <activation>
                 <property>

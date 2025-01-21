@@ -61,7 +61,14 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import org.springframework.http.codec.multipart.Part;
 {{/reactive}}
-
+{{^reactive}}{{#serverSentEvents}}
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledExecutorService;
+{{/serverSentEvents}}{{/reactive}}
 {{#useBeanValidation}}
 import {{javaxPackage}}.validation.Valid;
 import {{javaxPackage}}.validation.constraints.*;

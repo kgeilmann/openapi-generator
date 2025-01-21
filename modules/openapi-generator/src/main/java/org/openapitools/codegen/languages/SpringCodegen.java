@@ -409,8 +409,10 @@ public class SpringCodegen extends AbstractJavaCodegen
                 throw new IllegalArgumentException("Currently, reactive option doesn't supported by Spring Cloud");
             }
             convertPropertyToBooleanAndWriteBack(REACTIVE, this::setReactive);
-            convertPropertyToBooleanAndWriteBack(SSE, this::setSse);
         }
+
+        convertPropertyToBooleanAndWriteBack(SSE, this::setSse);
+        //fixme: spring cloud does not support sse?
 
         convertPropertyToStringAndWriteBack(RESPONSE_WRAPPER, this::setResponseWrapper);
         convertPropertyToBooleanAndWriteBack(USE_TAGS, this::setUseTags);
@@ -1025,51 +1027,53 @@ public class SpringCodegen extends AbstractJavaCodegen
             if (DocumentationProvider.SPRINGFOX.equals(getDocumentationProvider())) {
                 codegenOperation.imports.add("ApiIgnore");
             }
-            if (sse) {
-                var MEDIA_EVENT_STREAM = "text/event-stream";
-                // inspecting used streaming media types
-                /*
-                 expected definition:
-                 content:
-                    text/event-stream:
-                        schema:
-                        type: array
-                        format: event-stream
-                        items:
-                            type: <type> or
-                            $ref: <typeRef>
-                 */
-                Map<String, List<Schema>> schemaTypes = operation.getResponses().entrySet().stream()
-                        .map(e -> Pair.of(e.getValue(), fromResponse(e.getKey(), e.getValue())))
-                        .filter(p -> p.getRight().is2xx) // consider only success
-                        .map(p -> p.getLeft().getContent().get(MEDIA_EVENT_STREAM))
-                        .map(MediaType::getSchema)
-                        .collect(Collectors.toList()).stream()
-                        .collect(Collectors.groupingBy(Schema::getType));
-                if(schemaTypes.containsKey("array")) {
-                    // we have a match with SSE pattern
-                    // double check potential conflicting, multiple specs
-                    if(schemaTypes.keySet().size() > 1) {
-                        throw new RuntimeException("only 1 response media type supported, when SSE is detected");
-                    }
-                    // double check schema format
-                    List<Schema> eventTypes = schemaTypes.get("array");
-                    if( eventTypes.stream().anyMatch(schema -> !"event-stream".equalsIgnoreCase(schema.getFormat()))) {
-                        throw new RuntimeException("schema format 'event-stream' is required, when SSE is detected");
-                    }
-                    // double check item types
-                    Set<String> itemTypes = eventTypes.stream()
-                            .map(schema -> schema.getItems().getType() != null
-                                    ? schema.getItems().getType()
-                                    : schema.getItems().get$ref())
-                            .collect(Collectors.toSet());
-                    if(itemTypes.size() > 1) {
-                        throw new RuntimeException("only single item type is supported, when SSE is detected");
-                    }
-                    codegenOperation.vendorExtensions.put("x-sse", true);
-                } // Not an SSE compliant definition
-            }
         }
+
+        if (sse) {
+            var MEDIA_EVENT_STREAM = "text/event-stream";
+            // inspecting used streaming media types
+            /*
+             expected definition:
+             content:
+                text/event-stream:
+                    schema:
+                    type: array
+                    format: event-stream
+                    items:
+                        type: <type> or
+                        $ref: <typeRef>
+             */
+            Map<String, List<Schema>> schemaTypes = operation.getResponses().entrySet().stream()
+                    .map(e -> Pair.of(e.getValue(), fromResponse(e.getKey(), e.getValue())))
+                    .filter(p -> p.getRight().is2xx) // consider only success
+                    .map(p -> p.getLeft().getContent().get(MEDIA_EVENT_STREAM))
+                    .map(MediaType::getSchema)
+                    .collect(Collectors.toList()).stream()
+                    .collect(Collectors.groupingBy(Schema::getType));
+            if(schemaTypes.containsKey("array")) {
+                // we have a match with SSE pattern
+                // double check potential conflicting, multiple specs
+                if(schemaTypes.keySet().size() > 1) {
+                    throw new RuntimeException("only 1 response media type supported, when SSE is detected");
+                }
+                // double check schema format
+                List<Schema> eventTypes = schemaTypes.get("array");
+                if( eventTypes.stream().anyMatch(schema -> !"event-stream".equalsIgnoreCase(schema.getFormat()))) {
+                    throw new RuntimeException("schema format 'event-stream' is required, when SSE is detected");
+                }
+                // double check item types
+                Set<String> itemTypes = eventTypes.stream()
+                        .map(schema -> schema.getItems().getType() != null
+                                ? schema.getItems().getType()
+                                : schema.getItems().get$ref())
+                        .collect(Collectors.toSet());
+                if(itemTypes.size() > 1) {
+                    throw new RuntimeException("only single item type is supported, when SSE is detected");
+                }
+                codegenOperation.vendorExtensions.put("x-sse", true);
+            } // Not an SSE compliant definition
+        }
+
         return codegenOperation;
     }
 

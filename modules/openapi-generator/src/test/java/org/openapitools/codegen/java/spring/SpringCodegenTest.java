@@ -17,6 +17,17 @@
 
 package org.openapitools.codegen.java.spring;
 
+import static java.util.stream.Collectors.groupingBy;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.openapitools.codegen.TestUtils.*;
+import static org.openapitools.codegen.languages.AbstractJavaCodegen.GENERATE_BUILDERS;
+import static org.openapitools.codegen.languages.AbstractJavaCodegen.GENERATE_CONSTRUCTOR_WITH_ALL_ARGS;
+import static org.openapitools.codegen.languages.SpringCodegen.*;
+import static org.openapitools.codegen.languages.features.DocumentationProviderFeatures.ANNOTATION_LIBRARY;
+import static org.openapitools.codegen.languages.features.DocumentationProviderFeatures.DOCUMENTATION_PROVIDER;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.fail;
+
 import com.google.common.collect.ImmutableMap;
 import io.swagger.parser.OpenAPIParser;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -25,6 +36,18 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.parser.core.models.ParseOptions;
+import java.io.File;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.MapAssert;
 import org.openapitools.codegen.*;
@@ -42,30 +65,6 @@ import org.testng.Assert;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
-
-import java.io.File;
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
-import static java.util.stream.Collectors.groupingBy;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.openapitools.codegen.TestUtils.*;
-import static org.openapitools.codegen.languages.AbstractJavaCodegen.GENERATE_BUILDERS;
-import static org.openapitools.codegen.languages.AbstractJavaCodegen.GENERATE_CONSTRUCTOR_WITH_ALL_ARGS;
-import static org.openapitools.codegen.languages.SpringCodegen.*;
-import static org.openapitools.codegen.languages.features.DocumentationProviderFeatures.ANNOTATION_LIBRARY;
-import static org.openapitools.codegen.languages.features.DocumentationProviderFeatures.DOCUMENTATION_PROVIDER;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.fail;
 
 public class SpringCodegenTest {
 
@@ -4474,66 +4473,82 @@ public class SpringCodegenTest {
     }
 
     @Test
-    public void testSSEOperationSupport() throws Exception {
+    public void testSSEOperationSupportForNonReactive() throws Exception {
 
-        File output = Files.createTempDirectory("test").toFile().getCanonicalFile();
-        output.deleteOnExit();
-
-        final OpenAPI openAPI = TestUtils.parseFlattenSpec("src/test/resources/3_0/sse.yaml");
-        final SpringCodegen codegen = new SpringCodegen();
-        codegen.setOpenAPI(openAPI);
-        codegen.setOutputDir(output.getAbsolutePath());
-
-        codegen.additionalProperties().put(SSE, "true");
-        codegen.additionalProperties().put(REACTIVE, "true");
-        codegen.additionalProperties().put(INTERFACE_ONLY, "false");
-        codegen.additionalProperties().put(DELEGATE_PATTERN, "true");
-
-        ClientOptInput input = new ClientOptInput();
-        input.openAPI(openAPI);
-        input.config(codegen);
-
-        DefaultGenerator generator = new DefaultGenerator();
-        generator.setGeneratorPropertyDefault(CodegenConstants.APIS, "true");
-        generator.setGenerateMetadata(false);
-
-        Map<String, File> files = generator.opts(input).generate().stream()
-                .collect(Collectors.toMap(File::getName, Function.identity()));
+        Map<String, Object> additionalProperties = Map.of(SSE, true, REACTIVE, "false", INTERFACE_ONLY, "false", DELEGATE_PATTERN, "true");
+        Map<String, File> files = generateFromContract("src/test/resources/3_0/sse.yaml", "spring-boot", additionalProperties);
 
         MapAssert.assertThatMap(files).isNotEmpty();
         File api = files.get("PathApi.java");
         File delegate = files.get("PathApiDelegate.java");
 
         JavaFileAssert.assertThat(api)
-                .assertMethod("sseVariant1", "ServerWebExchange")
+                .assertMethod("sseVariant1")
                 .isNotNull()
-                .hasReturnType("Flux<String>")
+                .hasReturnType("SseEmitter")
                 .toFileAssert()
-                .assertMethod("sseVariant2", "ServerWebExchange")
+                .assertMethod("sseVariant2")
                 .isNotNull()
-                .hasReturnType("Flux<EventType>")
+                .hasReturnType("SseEmitter")
                 .toFileAssert()
-                .assertMethod("nonSSE", "ServerWebExchange")
+                .assertMethod("nonSSE")
                 .isNotNull()
-                .hasReturnType("Mono<ResponseEntity<String>>");
+                .hasReturnType("ResponseEntity<String>");
 
         JavaFileAssert.assertThat(delegate)
-                .assertMethod("sseVariant1", "ServerWebExchange")
+                .assertMethod("sseVariant1")
                 .isNotNull()
-                .hasReturnType("Flux<String>")
-                .bodyContainsLines("return Flux.empty();")
+                .hasReturnType("SseEmitter")
+                .bodyContainsLines("SseEmitter emitter = new SseEmitter(0L);", "return emitter;")
                 .toFileAssert()
-                .assertMethod("sseVariant2", "ServerWebExchange")
+                .assertMethod("sseVariant2")
                 .isNotNull()
-                .hasReturnType("Flux<EventType>")
-                .bodyContainsLines("return Flux.empty();")
+                .hasReturnType("SseEmitter")
+                .bodyContainsLines("SseEmitter emitter = new SseEmitter(0L);", "return emitter;")
                 .toFileAssert()
-                .assertMethod("nonSSE", "ServerWebExchange")
+                .assertMethod("nonSSE")
                 .isNotNull()
-                .hasReturnType("Mono<ResponseEntity<String>>")
-                .bodyContainsLines("return result.then(Mono.empty());")
-        ;
+                .hasReturnType("ResponseEntity<String>")
+                .bodyContainsLines("return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);");
+    }
 
+    @Test
+    public void testSSEOperationSupportForReactive() throws Exception {
+        Map<String, Object> additionalProperties = Map.of(SSE, true, REACTIVE, "true", INTERFACE_ONLY, "false", DELEGATE_PATTERN, "true");
+        Map<String, File> files = generateFromContract("src/test/resources/3_0/sse.yaml", "spring-boot", additionalProperties);
+
+        MapAssert.assertThatMap(files).isNotEmpty();
+        File api = files.get("PathApi.java");
+        File delegate = files.get("PathApiDelegate.java");
+
+        JavaFileAssert.assertThat(api)
+                      .assertMethod("sseVariant1", "ServerWebExchange")
+                      .isNotNull()
+                      .hasReturnType("Flux<String>")
+                      .toFileAssert()
+                      .assertMethod("sseVariant2", "ServerWebExchange")
+                      .isNotNull()
+                      .hasReturnType("Flux<EventType>")
+                      .toFileAssert()
+                      .assertMethod("nonSSE", "ServerWebExchange")
+                      .isNotNull()
+                      .hasReturnType("Mono<ResponseEntity<String>>");
+
+        JavaFileAssert.assertThat(delegate)
+                      .assertMethod("sseVariant1", "ServerWebExchange")
+                      .isNotNull()
+                      .hasReturnType("Flux<String>")
+                      .bodyContainsLines("return Flux.empty();")
+                      .toFileAssert()
+                      .assertMethod("sseVariant2", "ServerWebExchange")
+                      .isNotNull()
+                      .hasReturnType("Flux<EventType>")
+                      .bodyContainsLines("return Flux.empty();")
+                      .toFileAssert()
+                      .assertMethod("nonSSE", "ServerWebExchange")
+                      .isNotNull()
+                      .hasReturnType("Mono<ResponseEntity<String>>")
+                      .bodyContainsLines("return result.then(Mono.empty());");
     }
 
     @Test
